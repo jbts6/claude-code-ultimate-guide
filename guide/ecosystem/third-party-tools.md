@@ -268,34 +268,72 @@ Tools that reduce tokens entering LLM context through compression, lazy-loading,
 
 ### lean-ctx
 
-A local-first context compression CLI and MCP server written in Rust. Where RTK filters command outputs, lean-ctx goes further: it applies compression across four independent dimensions — file reads, shell output, cross-session memory, and codebase graph traversal.
+A local-first context compression CLI and MCP server written in Rust. Installs once globally and activates in every Claude Code project without per-project configuration.
 
 | Attribute | Details |
 |-----------|---------|
 | **Source** | [GitHub: yvgude/lean-ctx](https://github.com/yvgude/lean-ctx) |
-| **Install** | `cargo install lean-ctx` |
+| **Install** | `curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh \| bash && lean-ctx setup` |
 | **Language** | Rust |
 | **Stars** | ~1 366 |
-| **Status** | Active, breaking changes frequent |
+| **Version** | v3.6.3 |
 
-**The 4 compression dimensions**:
+**How it works**
 
-- **File reads**: 10 modes from `full` to `aggressive`. `signatures` returns only function/type signatures (95% reduction on large files). `diff` loads only changed hunks. `auto` selects the mode based on context utilization.
-- **Shell compression**: 56 built-in modules and 270 passthrough rules covering git, npm, cargo, docker, kubectl, and more — similar to RTK but configured as an MCP server, not a shell hook.
-- **Session cache (CCP — Context Continuity Protocol)**: stores a ~400-token session summary between conversations. On session start, the agent resumes with full context instead of ~50 000 tokens of cold re-read.
-- **Property graph**: SQLite-backed code graph supporting 18 languages via tree-sitter. Edges: imports, calls, exports, type references, tested-by. Agents navigate by graph proximity instead of reading full files.
+lean-ctx registers as a global MCP server (`~/.claude.json`) and installs three hooks in `~/.claude/settings.json` that fire on every tool call:
 
-**Context Gate and Bounce Tracker**: lean-ctx monitors context utilization and auto-downgrades read modes above 75% (`full` → `signatures`). If it detects that an agent repeatedly upgrades a compressed file back to full (>30% bounce rate), it auto-upgrades the default mode for that file.
+- `PreToolUse hook redirect` — intercepts native Read calls and routes them to `ctx_read` (AST parsing + file cache)
+- `PreToolUse hook rewrite` — routes Bash calls through `ctx_shell` (pattern-based shell compression)
+- `PostToolUse / SessionEnd hook observe` — feeds the CCP cross-session memory
 
-**Benchmarks**: 84.7% cost reduction in a simulated 30-minute session ($1.179 → $0.181). Map and signatures modes reach 95-96%.
+**The 4 compression dimensions**
 
-**When to consider lean-ctx**:
+- **File reads with AST parsing**: tree-sitter parses TypeScript, Python, Rust, and 15 other languages. `signatures` mode returns only type and function signatures (no bodies). `map` mode returns exports and dependencies. A 2364-line `schema.prisma` compresses to ~200 tokens. Unchanged files are served from cache at ~13 tokens on re-read.
+- **Shell output**: 60+ compression patterns specific to git, cargo, npm, docker, and kubectl. `git log -10 --stat` becomes 10 commit lines plus a single summary.
+- **Cross-session memory (CCP — Context Continuity Protocol)**: stores a ~400-token session summary on exit. The next session loads it rather than cold-reading 50,000+ tokens of prior context.
+- **Codebase graph**: SQLite-backed dependency graph built from tree-sitter imports/exports across 18 languages. `ctx_overview` uses it to score files by import centrality and surface the most connected modules first.
 
-- You run long sessions with many file reads and the context fills up before the task is done
-- You want cross-session memory without manual prompt engineering
-- Your codebase is large enough that `signatures` mode provides meaningful savings over full reads
+**Measured benchmarks (TypeScript/T3 monorepo, 2455 files)**
 
-> **Caution**: lean-ctx is young and has had recent security fixes alongside frequent breaking changes. Evaluate before adopting on production workflows. For stable, hook-based shell output filtering, RTK remains the safer starting point.
+| Metric | Value |
+|--------|-------|
+| Overall compression rate | 57.8% |
+| ctx_read savings rate | 86% |
+| ctx_search savings rate | 72% |
+| Tokens saved in one day | 1.3M |
+| schema.prisma 2364L in signatures mode | ~200 tokens (99%) |
+| File re-read (cache hit) | 13 tokens |
+
+Results are lower on Markdown-heavy repos — the AST parser finds less structure to compress in documentation files than in TypeScript or Rust source.
+
+**RTK vs lean-ctx: complementary layers**
+
+Both tools reduce token consumption but operate at different points in the pipeline and do not conflict:
+
+| Layer | Tool | What it compresses |
+|-------|------|--------------------|
+| CLI output (shell hook) | RTK | git, cargo, npm, tsc output text |
+| File reads (MCP redirect) | lean-ctx | File content via AST + cache |
+| Cross-session memory | lean-ctx | Session summaries via CCP |
+
+RTK compresses shell output more aggressively (60-90% savings). lean-ctx's savings come almost entirely from file reads (86% of its total savings on measured sessions). Use both together.
+
+**Monitoring**
+
+```bash
+lean-ctx gain           # dashboard: tokens saved, USD, top commands
+lean-ctx gain --daily   # day-by-day breakdown
+lean-ctx cep            # efficiency score /100 (compression, cache hit rate, consistency)
+lean-ctx dashboard      # web UI at localhost:3333
+```
+
+A global `/lean-ctx-audit` slash command (`~/.claude/commands/lean-ctx-audit.md`) runs a full audit from within any session. See [context-engineering.md §12](../core/context-engineering.md#12-token-compression-tools) for the full tool comparison and setup guide.
+
+**When to adopt lean-ctx**
+
+Highest value on TypeScript, Rust, or Python projects where large files are read repeatedly within a session, sessions fill context before the task completes, or cross-session memory matters. Less impactful on documentation repos where most files are Markdown.
+
+> **Note**: lean-ctx releases frequently. Run `lean-ctx setup` after upgrades to refresh hook and MCP registration. For shell output filtering only, RTK is the simpler starting point.
 
 ---
 
@@ -1298,6 +1336,22 @@ A CLI tool that maps a codebase (plus any mix of docs, PDFs, images, and videos)
 | `graphify-out/GRAPH_REPORT.md` | Key concepts, surprising connections, suggested questions |
 | `graphify-out/graph.json` | Structured graph data reused on every query |
 
+**Under the hood — cache files in `graphify-out/`:**
+
+Beyond the 3 public files, Graphify keeps a cache layer that powers incremental rebuilds. These hidden files appear after the first run:
+
+| File | Role |
+|------|------|
+| `.graphify_ast.json` | Raw AST from tree-sitter — all code, no API call, often 15-20 MB |
+| `.graphify_detect.json` | Output of `collect_files()` — the full file manifest |
+| `.graphify_chunk_XX.json` | Batches of files sent to the AI API for semantic extraction |
+| `.chunk_manifest_XX.json` | Which files belong to each chunk — used by `--update` to isolate changes |
+| `.graphify_semantic.json` | Semantic embeddings after entity deduplication |
+| `.graphify_uncached.txt` | Files not yet cached in the last run |
+| `cache/` | Content hashes per file for change detection |
+
+On `--update`: Graphify compares current content hashes against the cache, identifies which files changed, re-processes only their chunks via the AI API, then reconstructs `graph.json` from unchanged chunks plus the new ones. Files that haven't changed cost zero API tokens.
+
 **Init in a project:**
 
 ```bash
@@ -1340,6 +1394,18 @@ Once registered with Claude Code, the installed skill lets Claude read `graph.js
 # Exposes: query, shortest_path, god_nodes, neighbor_traversal tools
 graphify mcp
 ```
+
+For large codebases (graph.json above ~5 MB), MCP mode is significantly more efficient. Without it, Claude loads `GRAPH_REPORT.md` first for orientation, then pulls targeted sections of `graph.json` as needed. With MCP running, Claude calls `god_nodes`, `query "auth flow"`, or `shortest_path` directly and receives only the relevant subgraph — no full graph load into context. A 22 MB `graph.json` loaded in full costs far more tokens than 4-5 targeted MCP tool calls returning the same answer.
+
+**How Claude uses the installed skill:**
+
+After `graphify install --platform claude`, the skill injects a rule: if `graphify-out/` exists in the current project, treat architecture questions as graph queries rather than file reads. The resolution order in practice:
+
+1. Claude reads `GRAPH_REPORT.md` first — compact (typically 150-200 KB), gives orientation on god nodes and surprising connections
+2. For specific queries, Claude consults targeted sections of `graph.json`
+3. With MCP server running: Claude calls `query`, `shortest_path`, `god_nodes`, or `neighbor_traversal` tools directly — far cheaper at scale
+
+Without Graphify: Claude re-reads source files every session to understand structure, burning tokens on orientation. With Graphify: that cost is paid once at build time, then amortized across all sessions.
 
 **Additional exports**: Wikipedia-style wiki with cross-community wikilinks, Obsidian vault with Canvas layouts, D3 collapsible-tree HTML, Mermaid call-flow diagrams with interactive zoom/pan, Neo4j graph push.
 

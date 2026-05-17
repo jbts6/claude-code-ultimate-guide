@@ -28,6 +28,8 @@ This guide covers everything from the token math behind context budgets to build
 8. [Context Reduction Techniques](#8-context-reduction-techniques)
 9. [Maturity Assessment](#9-maturity-assessment)
 10. [Token Audit Workflow](#10-token-audit-workflow)
+11. [Research Patterns](#11-research-patterns-what-the-literature-shows)
+12. [Token Compression Tools](#12-token-compression-tools)
 
 ---
 
@@ -1905,6 +1907,109 @@ For every factual claim you include in your response:
 ```
 
 The difference between claim-source mapping as a QA mechanism vs as a compliance mechanism: compliance tracking asks "did we use authorized sources?", QA tracking asks "is this specific claim accurate?" — both are valuable but for different failure modes. Agents that handle factual queries or generate reports need the QA version.
+
+---
+
+## 12. Token Compression Tools
+
+The previous sections focus on what to put in context. This section covers tooling that compresses what enters context at the pipeline level — reducing token volume before Claude ever processes it. These tools complement CLAUDE.md authorship: good context engineering reduces noise at design time, compression tools reduce volume at runtime.
+
+Two independent tools operate at different layers of the Claude Code tool pipeline.
+
+---
+
+### Layer 1 — CLI Output: RTK
+
+RTK (Rust Token Killer) is a CLI proxy that intercepts shell command output and compresses it before Claude reads it. It operates via a `PreToolUse` hook that rewrites commands like `git log` to `rtk git log`.
+
+**What it compresses**: git, cargo, npm, pnpm, tsc, vitest, playwright, docker, kubectl, and more. Measured savings: 60-90% on supported commands.
+
+**What it does not compress**: file reads, MCP tool results, anything not going through a Bash tool call.
+
+```bash
+brew install rtk-ai/tap/rtk   # or: cargo install rtk
+rtk init --global              # installs PreToolUse hook + settings.json patch
+rtk gain                       # dashboard: tokens saved per command
+```
+
+> **Cross-ref**: Full command reference and TOML filter DSL at [third-party-tools.md §RTK](../ecosystem/third-party-tools.md#rtk-rust-token-killer).
+
+---
+
+### Layer 2 — File Reads and Session Memory: lean-ctx
+
+lean-ctx operates as a global MCP server that intercepts Read calls and Bash calls at the tool level, below RTK's shell hook. It uses tree-sitter AST parsing to extract only the relevant structure of a file rather than sending the full content.
+
+**Installation** (one-time, global):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh | bash
+lean-ctx setup   # registers MCP server + hooks in ~/.claude.json and ~/.claude/settings.json
+```
+
+No per-project setup required.
+
+**The 10 read modes**
+
+| Mode | What it returns | Best for |
+|------|----------------|----------|
+| `signatures` | Type and function signatures only | Large TypeScript/Rust files read for context |
+| `map` | Exports and import dependencies | Understanding module relationships |
+| `auto` | System selects based on file type and context usage | Default, safe for most cases |
+| `full` | Full file, cached | Files you are about to edit |
+| `diff` | Changed lines only | Re-reading a file after an edit |
+| `lines:N-M` | Specific line range | Targeted inspection |
+| `aggressive` | Maximum compression, syntax-stripped | Large files needed only for reference |
+| `entropy` | High-entropy fragments only | Scanning for anomalies |
+| `task` | Task-relevant lines | Active task set defined |
+
+**Rule**: use `full` for files you will edit. Use `signatures` or `map` for files you are reading for context. The difference on a 2364-line file: `full` costs ~19,000 tokens, `signatures` costs ~200 tokens.
+
+**Cache**: re-reading an unchanged file costs ~13 tokens regardless of file size. The cache is invalidated by file mtime.
+
+**CCP (Context Continuity Protocol)**: on session end, lean-ctx writes a ~400-token summary of what was read, found, and decided. The next session loads it automatically, eliminating the cold-start cost of re-reading prior context.
+
+**Measured benchmarks (TypeScript/T3 monorepo, 2455 files, 7063-node graph)**
+
+| Metric | Value |
+|--------|-------|
+| Overall compression rate | 57.8% |
+| ctx_read savings rate | 86% |
+| Tokens saved in one day | 1.3M |
+| schema.prisma 2364L → signatures | ~200 tokens (99%) |
+| File re-read (cache hit) | 13 tokens |
+
+**Monitoring your efficiency**
+
+```bash
+lean-ctx gain            # overall dashboard
+lean-ctx gain --daily    # day-by-day savings
+lean-ctx cep             # CEP score /100: compression, cache hit rate, consistency, mode diversity
+lean-ctx sessions list   # session history with token counts
+```
+
+The `/lean-ctx-audit` slash command runs all of the above in one pass and synthesizes a report. Add it to `~/.claude/commands/lean-ctx-audit.md` to make it available in every project.
+
+---
+
+### Choosing between the two
+
+RTK and lean-ctx do not overlap meaningfully. Their actual savings distribution from measured sessions:
+
+| Source | Tool | % of total savings |
+|--------|------|--------------------|
+| File reads (AST) | lean-ctx | ~85% |
+| Search results | lean-ctx | ~5% |
+| Shell output | RTK | remainder |
+| Shell output via lean-ctx | lean-ctx | <1% (RTK is better here) |
+
+Install both. RTK handles CLI output; lean-ctx handles file reads and session memory.
+
+**When lean-ctx adds the most value**: TypeScript, Rust, Python projects where large source files are read repeatedly, sessions run long enough that context fills before completion, and cross-session continuity matters.
+
+**When lean-ctx adds less value**: Markdown-heavy documentation repos. The AST parser finds code examples embedded in Markdown rather than source structure. Gains exist but are lower than on code-first projects.
+
+> **Cross-ref**: Full tool profiles at [third-party-tools.md §Context Compression](../ecosystem/third-party-tools.md#context-compression).
 
 ---
 
