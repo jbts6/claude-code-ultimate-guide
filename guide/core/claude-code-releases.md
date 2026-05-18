@@ -8,7 +8,7 @@ tags: [reference, release]
 
 > Condensed changelog of Claude Code official releases.
 > **Full details**: [github.com/anthropics/claude-code/CHANGELOG.md](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
-> **Machine-readable**: [claude-code-releases.yaml](../machine-readable/claude-code-releases.yaml)
+> **Machine-readable**: [claude-code-releases.yaml](../../machine-readable/claude-code-releases.yaml)
 
 **Latest**: v2.1.143 | **Updated**: 2026-05-16
 
@@ -1936,4 +1936,4 @@ tags: [reference, release]
 
 ---
 
-*Last updated: 2026-03-05 | [Back to main guide](./ultimate-guide.md)*
+*Last updated: 2026-03-05 | [Back to main guide](../ultimate-guide.md)*
