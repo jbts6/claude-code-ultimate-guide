@@ -3,7 +3,7 @@
 # Purpose: Track Claude Code product releases for documentation sync
 # Maintained: Manual updates when new releases are announced
 
-latest: "2.1.153"
+latest: "2.1.154"
 updated: "2026-05-28"
 
 # ════════════════════════════════════════════════════════════════
@@ -14,6 +14,17 @@ releases:
   # ─────────────────────────────────────────────────────────────
   # 2.1.x Series (January-May 2026)
   # ─────────────────────────────────────────────────────────────
+
+  - version: "2.1.154"
+    date: "2026-05-28"
+    highlights:
+      - "⭐ Opus 4.8 is here: defaults to high effort, `/effort xhigh` for hardest tasks; fast mode at 2x rate / 2.5x speed"
+      - "⭐ Dynamic workflows: Claude orchestrates tens to hundreds of background agents in one session; `/workflows` to monitor runs"
+      - "Lean system prompt default for all models except Haiku/Sonnet/Opus 4.7+; `/simplify` reworked to cleanup-only review (reuse/simplification/efficiency); `! <command>` in claude agents runs background shell sessions; streaming tool execution always-on incl. Bedrock/Vertex/Foundry"
+      - "30+ bug fixes: auto-mode exfiltration detection improved, plugin `defaultEnabled: false` option, `←←` agents view on all platforms"
+    breaking:
+      - "`CLAUDE_CODE_OPUS_4_6_FAST_MODE_OVERRIDE` deprecated, removed 2026-06-01; use `/model claude-opus-4-6[1m]` then `/fast on`"
+      - "`/simplify` now runs cleanup-only review instead of full `/code-review --fix`"
 
   - version: "2.1.153"
     date: "2026-05-28"

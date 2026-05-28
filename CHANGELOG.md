@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Documentation
 
+- **Claude Code Releases**: Updated tracking to v2.1.154 (2026-05-28)
+  - Opus 4.8 with high effort default and fast mode at 2x rate / 2.5x speed
+  - Dynamic workflows: Claude orchestrates tens to hundreds of background agents in one session
+  - Lean system prompt now default for all models except Haiku/Sonnet/Opus 4.7+
+  - Breaking: `CLAUDE_CODE_OPUS_4_6_FAST_MODE_OVERRIDE` deprecated (removed 2026-06-01)
+  - Breaking: `/simplify` reworked to cleanup-only review
 - **Claude Code Releases**: Updated tracking to v2.1.153 (2026-05-28)
   - `/model` now saves as default for new sessions (IDE parity); `s` in picker = current session only
   - `skipLfs` for plugin marketplace git sources; status line commands get `COLUMNS`/`LINES` env vars
