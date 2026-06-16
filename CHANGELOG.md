@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Third-party tool: Ponytail** (`guide/ecosystem/third-party-tools.md`): added to Plugin Ecosystem / Notable skill packs and Recommendations by Persona. Ponytail is a cross-agent skill that enforces a "lazy senior dev" decision ladder before writing code (YAGNI → stdlib → native platform feature → installed dependency → one line → minimum that works). Benchmarked at 80-94% less code, 47-77% lower cost, and 3-6x faster than unconstrained agents across Haiku/Sonnet/Opus. Ships with 4 commands (`/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`) and supports 13 agents. MIT, by DietrichGebert.
+
 - **Search index: GDPR/Privacy and Governance sections** (`machine-readable/reference.yaml`): added 16 `data_privacy_*` entries covering data flow, retention tiers (5y/30d/ZDR), known risks (`/bug` command, `.env` exposure, MCP DB), protective measures, and GDPR/HIPAA/PCI compliance. Governance and privacy sections are now searchable via cmd+k on the landing site and link to the local guide reader at `cc.bruniaux.com/guide/`.
 
 - **Section 9.26 Review-Driven Context Optimization** (`guide/ultimate-guide.md`): new advanced pattern covering how to convert structured inline review feedback (via tools like [crit](https://github.com/tomasz-tomczyk/crit)) into CLAUDE.md rules. Covers the round-to-round diff as a verification mechanism, pattern extraction from review comment threads, promotion criteria, and the compounding effect over multiple sessions. Cross-referenced with §9.24 (Instinct-Based Learning) and §9.23 (Update Loop). Added to chapter 9 quick jump and ToC.
