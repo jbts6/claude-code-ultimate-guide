@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 002 — 上下文管理：200K token 的秘密</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --paper: #fdfdf8;
+    --accent: #8b2500;
+    --muted: #6b6b6b;
+  }
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--ink);
+    background: var(--paper);
+    max-width: 38rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    line-height: 1.65;
+    font-size: 1.05rem;
+  }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; }
+  a { color: var(--accent); }
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2.5rem; }
+  .mission { font-style: italic; color: var(--muted); }
+  .objective {
+    border-left: 3px solid var(--accent);
+    padding: 0.5rem 1rem;
+    margin: 2rem 0;
+  }
+  code, pre {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.85em;
+  }
+  pre {
+    background: #f4f4ec;
+    padding: 1rem;
+    overflow-x: auto;
+    line-height: 1.45;
+  }
+  figure { margin: 2rem 0; }
+  figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+  .quiz li { margin-bottom: 1.25rem; }
+  details summary { cursor: pointer; color: var(--accent); }
+  .reading-list {
+    background: #f4f4ec;
+    padding: 1rem 1.25rem;
+    margin: 2rem 0;
+  }
+  .reading-list h2 {
+    margin-top: 0;
+  }
+  .reading-list li {
+    margin-bottom: 0.75rem;
+  }
+  .resource-kind {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #ddd;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  nav.lessons { display: flex; justify-content: space-between; font-size: 0.9rem; }
+  @media print {
+    details { display: block; }
+    details summary { display: none; }
+    details[open], details { page-break-inside: avoid; }
+    nav.lessons, .follow-up { display: none; }
+    body { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>上下文管理：200K token 的秘密</h1>
+  <p class="meta">Lesson 002 · Claude Code · 2026-06-15</p>
+  <p class="mission">Part of your mission to 理解 Claude Code 的核心架构和工具体系，能够自主设计、调试和优化自己的 skill 工作流。</p>
+</header>
+
+<div class="objective">
+  <strong>学完这节课，你将能够</strong> 解释为什么 Claude Code 有时会"忘记"之前的信息，以及如何通过 CLAUDE.md 确保关键信息不丢失。
+</div>
+
+<h2>你一定遇到过的问题</h2>
+<p>假设你在写小说，对话已经进行了 2 小时：</p>
+<pre>
+你：记住，主角叫林默，她有一只蓝色眼睛。
+Claude：好的，记住了。
+...（聊了 50 轮）
+你：林默的眼睛是什么颜色？
+Claude：蓝色的。
+你：对了，她小时候在哪里长大？
+Claude：（胡说了一个地方，和你之前设定的完全不同）
+</pre>
+<p><strong>为什么会这样？不是 Claude 变笨了，是上下文窗口装不下了。</strong></p>
+
+<h2>上下文窗口：那张桌子</h2>
+<p>把上下文窗口想象成<strong>一张桌子</strong>：</p>
+<ul>
+  <li>你和 Claude 的所有对话，包括你发的消息、Claude 的回复、工具读到的内容、工具执行的结果——<strong>全部都要摊在这张桌子上</strong></li>
+  <li>Claude 每次"思考"的时候，需要看到桌上<strong>所有</strong>东西</li>
+  <li>桌子有固定大小——Claude 的上下文窗口大约是 <strong>200K token</strong>（约 15 万中文字）</li>
+</ul>
+
+<figure>
+<pre>
+┌─────────────────────────────────────────────────────┐
+│                上下文窗口（那张桌子）                │
+│                                                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ 你的消息  │ │ Claude   │ │ 工具返回  │  ← 全部   │
+│  │          │ │ 的回复   │ │ 的内容   │    共享    │
+│  │          │ │          │ │          │   同一空间  │
+│  └──────────┘ └──────────┘ └──────────┘            │
+│                                                     │
+│  总容量：200K token（约 15 万中文字）               │
+└─────────────────────────────────────────────────────┘
+</pre>
+<figcaption>上下文窗口是共享空间：用户消息、模型回复、工具返回结果全部混在一起，共享同一个 200K 的空间。</figcaption>
+</figure>
+
+<h2>关键洞察：工具返回的内容会进入上下文</h2>
+<p>这是 Session 2 最重要的一课。当你让 Claude Code 读取一个文件或执行一个命令时：</p>
+<pre>
+你：读一下 novel/chapter-01.md
+        ↓
+Claude Code 调用 Read 工具
+        ↓
+Read 工具读取文件，返回 2000 行内容
+        ↓
+这 2000 行内容作为【工具返回结果】
+        ↓
+【放进上下文窗口】   ← 关键！
+        ↓
+Claude 大模型看到这些内容，开始思考
+</pre>
+<p><strong>工具返回的每一行内容都会进入上下文窗口。</strong> 这正是 Claude Code 能理解你代码的原因——它把文件内容"喂"给大模型看。</p>
+<p>Bash 命令也一样：stdout 的输出作为工具返回结果，放进上下文窗口。</p>
+
+<h2>信息溢出：桌子满了怎么办？</h2>
+<p>关键洞察：<strong>桌子上的东西不是永久的</strong>。当东西太多放不下时，最早的那些会被"推出桌面"——Claude 就"看不见"了。</p>
+
+<figure>
+<pre>
+上下文窗口（200K token）满了之后：
+
+早期对话 ████████████████░░░░░░░░░░░░░░░░  ← 被丢弃
+中期内容 ████████████████████████████████  ← 还在
+新内容   ████████████████████████░░░░░░░░  ← 刚加入
+                                         ↑
+                              早期内容被推出桌面
+                              Claude 看不见了
+</pre>
+<figcaption>当上下文窗口满了，系统主动丢弃最早的内容，给新内容腾空间。不是"放不下"，而是主动丢弃。</figcaption>
+</figure>
+
+<p>这就像桌子满了之后，你把最早摆上去的东西推到地上——<strong>不是它们消失了，而是你看不见它们了</strong>。</p>
+
+<h2>Lost in the Middle：中间遗失</h2>
+<p>即使内容还在上下文窗口里，大模型对不同位置的内容关注度也不同：</p>
+
+<figure>
+<pre>
+上下文窗口的注意力分布：
+
+开头的内容  ████████████████  ← 容易记住
+中间的内容  ████████░░░░░░░░  ← 容易忽略（！）
+结尾的内容  ████████████████  ← 容易记住
+</pre>
+<figcaption>Lost in the Middle 现象：大模型对开头和结尾的内容关注度更高，中间的信息容易被"淹没"。</figcaption>
+</figure>
+
+<p>这就是为什么：</p>
+<ul>
+  <li>你的第 1 条消息（设定主角叫林默）在开头，通常能记住</li>
+  <li>但第 30 条消息里你补充的一个重要约束，可能就在中间被忽略了</li>
+  <li>你最后说的一句话又在结尾，所以往往能记住</li>
+</ul>
+
+<h2>解决方案：关键信息放哪里？</h2>
+<p>上下文窗口满了之后，最重要的信息不应该依赖对话历史，而应该放在<strong>不会被丢弃</strong>的地方：</p>
+
+<table>
+  <tr>
+    <th>方法</th>
+    <th>是否有效</th>
+    <th>原理</th>
+    <th>问题</th>
+  </tr>
+  <tr>
+    <td><strong>CLAUDE.md</strong></td>
+    <td>✅ 最佳</td>
+    <td>每次对话自动注入，永远在开头</td>
+    <td>无</td>
+  </tr>
+  <tr>
+    <td>记忆工具</td>
+    <td>✅ 有效</td>
+    <td>持久存储，需要时主动读取</td>
+    <td>需要 Claude 主动决定去读</td>
+  </tr>
+  <tr>
+    <td>每次重复</td>
+    <td>✅ 有效</td>
+    <td>新开对话时放在开头</td>
+    <td>太累，不可持续</td>
+  </tr>
+</table>
+
+<p><strong>对于写小说这种场景——关键设定放在 CLAUDE.md 里是最稳的。</strong></p>
+
+<h2>架构全景</h2>
+<figure>
+<pre>
+Claude Code（CLI 包装）
+    │
+    │  把所有消息打包发给……
+    ▼
+大模型（Claude API）
+    │
+    │  大模型才是真正"读"上下文的那一个
+    │  它的上下文窗口是固定的（200K）
+    ▼
+上下文窗口（那张桌子）
+    │
+    │  装满了？最早的内容被丢弃
+    │  中间的内容容易被忽略
+    ▼
+解决方案：CLAUDE.md（自动注入，永远在开头）
+</pre>
+<figcaption>Claude Code 是"手"，Claude（大模型）是"脑"。上下文管理发生在大模型那一层。</figcaption>
+</figure>
+
+<h2>检查你的理解</h2>
+<ol class="quiz">
+  <li>
+    为什么和 Claude Code 聊久了它会"忘记"之前说的话？两个可能的原因是什么？
+    <details><summary>答案</summary><p>1) 信息溢出：上下文窗口满了，最早的内容被主动丢弃。2) Lost in the Middle：即使内容还在上下文窗口里，中间部分也容易被忽略。</p></details>
+  </li>
+  <li>
+    当 Claude Code 用 Read 工具读取一个 5000 行的文件时，这些内容会去哪里？
+    <details><summary>答案</summary><p>Read 工具最多返回 2000 行，这些内容作为"工具返回结果"进入上下文窗口，大模型会看到这些内容。所以读大文件会快速消耗上下文空间。</p></details>
+  </li>
+  <li>
+    为什么 CLAUDE.md 是存放关键设定的最佳位置？
+    <details><summary>答案</summary><p>CLAUDE.md 的内容作为系统提示在每次对话开始时自动注入，永远在上下文窗口的开头，不会被丢弃，也不占对话空间。</p></details>
+  </li>
+  <li>
+    假设你已经和 Claude Code 聊了 100 轮，上下文快满了。你告诉它"林默有恐高症"。哪种方法能确保它下次还记得？
+    <details><summary>答案</summary><p>最可靠的方法是把这条设定写进 CLAUDE.md。下次新开对话时，它会自动注入到上下文开头。在当前对话中重复说也有效，但新开对话后又会面临同样的问题。</p></details>
+  </li>
+</ol>
+
+<section class="reading-list" aria-labelledby="reading-list">
+  <h2 id="reading-list">延伸阅读</h2>
+  <ul>
+    <li>
+      <span class="resource-kind">论文</span><br>
+      <a href="https://arxiv.org/abs/2307.03172">Lost in the Middle: How Language Models Use Long Contexts</a> — Liu et al., 2023. 揭示大模型对上下文中间内容关注度降低的现象，是理解上下文管理的学术基础。
+    </li>
+    <li>
+      <span class="resource-kind">官方文档</span><br>
+      <a href="https://code.claude.com/docs">Claude Code Documentation</a> — Anthropic 官方文档，包含 CLAUDE.md 配置和上下文管理的详细说明。
+    </li>
+    <li>
+      <span class="resource-kind">深度解析</span><br>
+      <a href="../core/architecture.md">How Claude Code Works: Architecture & Internals</a> — 本仓库的架构详解，包含上下文管理的完整分析。
+    </li>
+  </ul>
+</section>
+
+<nav class="lessons">
+  <a href="./0001-core-loop.html">← 上一课：核心循环</a>
+  <a href="./0003-tool-system.html">下一课：工具体系 →</a>
+</nav>
+<p><a href="../cheat-sheet.md">速查表</a> · <a href="../glossary.md">术语表</a></p>
+
+<footer class="follow-up">
+  有问题？运行 <code>/teach-me claude-code</code> — 你的导师记得你学到哪里了。
+</footer>
+
+</body>
+</html>

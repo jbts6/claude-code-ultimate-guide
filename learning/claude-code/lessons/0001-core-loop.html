@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 001 — 核心循环：Claude Code 是怎么工作的</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --paper: #fdfdf8;
+    --accent: #8b2500;
+    --muted: #6b6b6b;
+  }
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--ink);
+    background: var(--paper);
+    max-width: 38rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    line-height: 1.65;
+    font-size: 1.05rem;
+  }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; }
+  a { color: var(--accent); }
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2.5rem; }
+  .mission { font-style: italic; color: var(--muted); }
+  .objective {
+    border-left: 3px solid var(--accent);
+    padding: 0.5rem 1rem;
+    margin: 2rem 0;
+  }
+  code, pre {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.85em;
+  }
+  pre {
+    background: #f4f4ec;
+    padding: 1rem;
+    overflow-x: auto;
+    line-height: 1.45;
+  }
+  figure { margin: 2rem 0; }
+  figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+  .quiz li { margin-bottom: 1.25rem; }
+  details summary { cursor: pointer; color: var(--accent); }
+  .reading-list {
+    background: #f4f4ec;
+    padding: 1rem 1.25rem;
+    margin: 2rem 0;
+  }
+  .reading-list h2 {
+    margin-top: 0;
+  }
+  .reading-list li {
+    margin-bottom: 0.75rem;
+  }
+  .resource-kind {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #ddd;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  nav.lessons { display: flex; justify-content: space-between; font-size: 0.9rem; }
+  @media print {
+    details { display: block; }
+    details summary { display: none; }
+    details[open], details { page-break-inside: avoid; }
+    nav.lessons, .follow-up { display: none; }
+    body { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>核心循环：Claude Code 是怎么工作的</h1>
+  <p class="meta">Lesson 001 · Claude Code · 2026-06-15</p>
+  <p class="mission">Part of your mission to 理解 Claude Code 的核心架构和工具体系，能够自主设计、调试和优化自己的 skill 工作流。</p>
+</header>
+
+<div class="objective">
+  <strong>学完这节课，你将能够</strong> 解释 Claude Code 的核心交互循环，并理解它和其他 AI Agent 的本质区别。
+</div>
+
+<h2>例子 1：普通 AI 对话</h2>
+<p>当你在网页版 ChatGPT 或 Claude.ai 输入"帮我写一段对话"时，流程是这样的：</p>
+<pre>
+你 → AI 平台（加上系统提示词）→ 大模型 → 返回结果 → 展示给你
+</pre>
+<p>一次往返，结束。大模型只做一件事：接收你的输入，生成文字，返回给你。</p>
+
+<h2>例子 2：Claude Code 的做法</h2>
+<p>当你输入"帮我修改第 3 章的对话"时，Claude Code 做了完全不同的事情：</p>
+<pre>
+你说："帮我修改第 3 章的对话"
+        ↓
+Claude Code → 大模型
+        ↓
+大模型说："我需要先看看你的小说文件"
+        ↓
+Claude Code 执行 Read 工具，读取文件
+        ↓
+结果返回给大模型
+        ↓
+大模型说："我看到第 3 章的对话风格了，现在我来写"
+        ↓
+Claude Code 执行 Write 工具，写入文件
+        ↓
+大模型说："完成了，你要看看吗？"
+        ↓
+展示给你
+</pre>
+<p><strong>你看到的一次交互，背后可能是 5 次、10 次、甚至 20 次的工具调用。</strong></p>
+
+<h2>核心原理：主循环（Master Loop）</h2>
+<p>Claude Code 的核心是一个循环。每一次循环包含四个步骤：</p>
+<figure>
+<pre>
+┌─────────────────────────────────────────┐
+│          Claude Code 主循环              │
+│                                          │
+│   你的提示                               │
+│       ↓                                  │
+│   ┌─────────────────┐                    │
+│   │  大模型思考      │ ← 没有分类器      │
+│   │  （决定下一步）  │ ← 没有路由层      │
+│   └────────┬────────┘                    │
+│            ↓                             │
+│      需要调用工具吗？                     │
+│       ↓           ↓                      │
+│      是           否                     │
+│       ↓           ↓                      │
+│   执行工具      返回文本给用户            │
+│       ↓           （结束）               │
+│   结果返回给大模型                        │
+│       ↓                                  │
+│   回到"大模型思考"（循环）               │
+│                                          │
+└─────────────────────────────────────────┘
+</pre>
+<figcaption>主循环：Claude Code 的核心架构。大模型自己决定何时调用什么工具，没有额外的分类器或路由层。</figcaption>
+</figure>
+
+<p>这个设计叫做<strong>"少脚手架，多模型"（Less Scaffolding, More Model）</strong>——Claude Code 只提供工具和循环，具体怎么用、什么时候用，全部由大模型自己决定。</p>
+
+<h2>工具调用的机制</h2>
+<p>大模型本身只是一个文本生成器，它不能直接执行命令。那它是怎么调用工具的呢？</p>
+<p>答案是：大模型输出一种<strong>特殊格式</strong>，Claude Code 能识别并执行。</p>
+<pre>
+我需要先读取第 3 章的内容。
+
+{"tool": "read", "file_path": "novel/chapter-03.md"}
+</pre>
+<p>注意这两部分：</p>
+<ul>
+  <li><strong>普通文字</strong>："我需要先读取第 3 章的内容" — 这是给人看的</li>
+  <li><strong>特殊格式</strong>：<code>{"tool": "read", ...}</code> — 这是给 Claude Code 看的</li>
+</ul>
+<p>Claude Code 看到这个 JSON 后，就知道模型想调用 read 工具，然后去执行，把结果返回给大模型。</p>
+
+<h2>工具的实际限制</h2>
+<p>即使上下文窗口很大（200K token），工具有自己的限制：</p>
+<table>
+  <tr>
+    <th>限制类型</th>
+    <th>是什么</th>
+    <th>大小</th>
+  </tr>
+  <tr>
+    <td>上下文窗口</td>
+    <td>大模型一次能"看到"的所有内容总和</td>
+    <td>200K token（约 15 万字）</td>
+  </tr>
+  <tr>
+    <td>工具返回限制</td>
+    <td>一次工具调用能返回多少内容</td>
+    <td>Read 工具：最多 2000 行</td>
+  </tr>
+</table>
+<p>所以当文件很大时，大模型的策略是：先用 grep 找到关键部分的位置，再用 Read 工具只读取需要的部分。</p>
+
+<h2>检查你的理解</h2>
+<ol class="quiz">
+  <li>
+    Claude Code 和普通 AI 对话的核心区别是什么？
+    <details><summary>答案</summary><p>普通对话是一问一答，一次往返就结束。Claude Code 运行一个"主循环"，大模型可以多次调用工具，直到任务完成。你看到的一次交互，背后可能有很多轮工具调用。</p></details>
+  </li>
+  <li>
+    当大模型"调用工具"时，它实际上在做什么？
+    <details><summary>答案</summary><p>大模型输出一段特殊格式的文本（如 JSON），告诉 Claude Code"我想用这个工具，参数是什么"。Claude Code 解析这个请求并执行，然后把结果返回给大模型。</p></details>
+  </li>
+  <li>
+    为什么大模型选择用 grep 而不是直接读取整个大文件？
+    <details><summary>答案</summary><p>两个原因：1) 工具有返回限制（如 Read 工具最多 2000 行）；2) 用 grep 精准定位再读取，比读取整个文件更节省 token 和上下文空间。</p></details>
+  </li>
+  <li>
+    在主循环中，"大模型自己决定一切"是什么意思？没有哪些"其他程序"在做决定？
+    <details><summary>答案</summary><p>没有额外的分类器告诉它"这是写代码任务"，没有路由层决定"这个请求应该发给哪个处理程序"。大模型读了文件内容后，自己判断该怎么改，然后自己决定调用什么工具。</p></details>
+  </li>
+</ol>
+
+<section class="reading-list" aria-labelledby="reading-list">
+  <h2 id="reading-list">延伸阅读</h2>
+  <ul>
+    <li>
+      <span class="resource-kind">官方文档</span><br>
+      <a href="https://www.anthropic.com/engineering/claude-code-best-practices">Claude Code Best Practices</a> — Anthropic 官方关于 Claude Code 设计哲学和最佳实践的博客文章，理解"少脚手架，多模型"理念的起点。
+    </li>
+    <li>
+      <span class="resource-kind">深度解析</span><br>
+      <a href="../core/architecture.md">How Claude Code Works: Architecture & Internals</a> — 本仓库的架构详解，包含主循环、工具体系、上下文管理的完整分析。
+    </li>
+  </ul>
+</section>
+
+<nav class="lessons">
+  <span></span>
+  <a href="./0002-context-management.html">下一课：上下文管理 →</a>
+</nav>
+<p><a href="../cheat-sheet.md">速查表</a> · <a href="../glossary.md">术语表</a></p>
+
+<footer class="follow-up">
+  有问题？运行 <code>/teach-me claude-code</code> — 你的导师记得你学到哪里了。
+</footer>
+
+</body>
+</html>
