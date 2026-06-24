@@ -6,9 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **data-privacy.md** (`guide/security/data-privacy.md`): reframed around CLI-specific risks for practitioners. Removed policy-paraphrase sections (retention tiers, Constitutional AI, IP considerations). Enriched the `/bug` command section with live verification commands and clarification that session context is included without scrubbing. Added a 7-point Quick Audit Checklist with runnable shell commands (training opt-out, bug command, env file blocking, native messaging host, MCP inventory, telemetry vars, env secret exposure). Section numbering updated throughout.
+
+### Documentation
+
+- **Claude Code Releases**: Updated tracking to v2.1.186
+  - ⭐ `claude mcp login/logout <name>` authenticates MCP servers from the CLI without the interactive `/mcp` menu; `--no-browser` flag for SSH sessions
+  - `!` bash commands now auto-trigger Claude to respond to output; opt-out via `"respondToBashCommands": false`
+  - Background subagents surface permission prompts in main session instead of auto-denying
+  - Fixed `Agent(type)` deny rules not enforced for named subagent spawns; 25+ bug fixes
+
 ### Added
 
 - **llms.txt / llms-full.txt / machine-readable/llms.txt stats sync** (3 files): updated Last Updated to June 21 2026, Lines of Documentation from 26,058 to 26,494 (reflects current ultimate-guide.md line count), Production Templates from 314 to 262 (authoritative count from check-landing-sync.sh method), and inline body references in llms-full.txt (FAQ answer, repo structure, What Is section).
+
+- **Team knowledge infrastructure guide** (`guide/ecosystem/team-knowledge-base.md`, new file): answers the question "where do we put the company knowledge base so both Claude Code and Cowork can use it?" Covers the 3-tier framework (static Markdown vault for direct file reads, MCP connectors for live systems like Jira/Confluence/Notion/GitBook, RAG at scale for large corpora), the ~100-1000 doc threshold for switching from direct reads to retrieval, Onyx (self-hosted, ex-Danswer), LlamaCloud and Ragie as managed RAG via MCP, the plugin pattern for distributing team workflows, and the Cowork-specific governance caveat (audit log and DLP gaps as of mid-2026). Includes setup code snippets, comparison tables, and a decision table for what to build first. Cross-linked from ultimate-guide.md Cowork section and guide/README.md Ecosystem table. Machine-readable index updated: 18 new entries in reference.yaml, shared_knowledge block in cowork-reference.yaml, llms.txt/machine-readable/llms.txt updated.
 
 - **Practitioner insights from IFTTD podcast** (`guide/ecosystem/practitioner-insights.md`): new file consolidating paraphrased field insights from 11 IFTTD episodes (290-361), organized into 5 themes: context engineering, agentic patterns and orchestration, LLM evaluation, agent security, and DevX and adoption. 22 attributed insights from practitioners including Guillaume Laforge (Google Cloud), Zineb Bendhiba (Red Hat), Frédéric Barthelet (Theodo), Samy Lastmann (Arago), Jocelyn N'takpe (ManoMano), and others. All French content reformulated in English with attribution format: name, role, company, episode number, ifttd.io URL. No direct quotes.
 
